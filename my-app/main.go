@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -88,13 +89,26 @@ func main() {
 	m.devices.Set(float64(len(dvs)))                          // Set de Gauge according to the connected devices
 	m.info.With(prometheus.Labels{"version": version}).Set(1) // If version is empty, uses 1 as default
 
-	// Custom Prometheus handler with the new registry
-	promHandler := promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg})
+	// Use multiplexers to run several servers avoiding the external endpoints exposicion
+	// dMux is used for the customized endpoints
+	dMux := http.NewServeMux()
+	dMux.HandleFunc("/devices", getDevices) // Replace the basic http.HandleFunc
 
-	// HTTP endpoint using the custom handler
-	http.Handle("/metrics", promHandler)
-	// Enable the /devices endpoint passing the function itself,
-	// not a call to it using HandleFunc
-	http.HandleFunc("/devices", getDevices)
-	http.ListenAndServe(":2112", nil)
+	// pMux is used for the default `/metrics endpoint
+	pMux := http.NewServeMux()
+	promHandler := promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
+	pMux.Handle("/metrics", promHandler)
+
+	// Listen for customized `devices`endpoint
+	go func() {
+		log.Fatal(http.ListenAndServe(":8080", dMux))
+	}()
+
+	// Listen for default `/metrics`` endpoint
+	go func() {
+		log.Fatal(http.ListenAndServe(":8081", pMux))
+	}()
+
+	// Keep the app running
+	select {}
 }
