@@ -81,6 +81,36 @@ func getDevices(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 }
 
+// Register a new device using a new handler because the standard one didn't manage a switch between
+// GET, POST methods
+func registerDevices(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		getDevices(w, r)
+	case "POST":
+		createDevice(w, r)
+	default:
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// Add a new device to the current list
+func createDevice(w http.ResponseWriter, r *http.Request) {
+	var dv Device
+
+	err := json.NewDecoder(r.Body).Decode(&dv)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	dvs = append(dvs, dv)
+
+	w.WriteHeader(http.StatusCreated)
+	w.Write([]byte("Device created!"))
+}
+
 func main() {
 	reg := prometheus.NewRegistry()               // Create a non-global registry without any collectors
 	reg.MustRegister(collectors.NewGoCollector()) // Add the included collector to the registry
@@ -92,7 +122,7 @@ func main() {
 	// Use multiplexers to run several servers avoiding the external endpoints exposicion
 	// dMux is used for the customized endpoints
 	dMux := http.NewServeMux()
-	dMux.HandleFunc("/devices", getDevices) // Replace the basic http.HandleFunc
+	dMux.HandleFunc("/devices", registerDevices) // Replace the basic http.HandleFunc with the switch
 
 	// pMux is used for the default `/metrics endpoint
 	pMux := http.NewServeMux()
